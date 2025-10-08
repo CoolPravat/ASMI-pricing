@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ASMI Pricing Micro‑Simulation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root{
+      --bg:#f6f8fb;--card:#ffffff;--ink:#0f172a;--muted:#64748b;--brand:#2563eb;--ok:#16a34a;--warn:#f59e0b;--bad:#e11d48;
+      --ring: 0 0 0 3px rgba(37,99,235,.25);
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial; background:linear-gradient(180deg,#f8fafc,#eef2ff 40%,#f8fafc); color:var(--ink)}
+    .wrap{max-width:1200px;margin:auto;padding:24px}
+    header{display:flex;gap:16px;align-items:center;justify-content:space-between;margin-bottom:16px}
+    h1{font-size:clamp(20px,3.2vw,28px);margin:0}
+    .sub{color:var(--muted)}
+    .row{display:grid;gap:16px}
+    .cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+    .cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}
+    @media (max-width:900px){.cols-2,.cols-3,.cols-4{grid-template-columns:1fr}}
+    .card{background:var(--card);border-radius:16px;box-shadow:0 6px 24px rgba(2,8,20,.06);padding:18px}
+    .title{font-weight:600;margin-bottom:8px}
+    .muted{color:var(--muted)}
+    .controls label{font-size:12px;color:var(--muted)}
+    .control{display:flex;gap:10px;align-items:center;margin-top:6px}
+    input[type="range"]{width:100%}
+    input[type="number"], select{border:1px solid #e5e7eb;border-radius:10px;padding:8px 10px;font:inherit;width:100%}
+    input[type="number"]:focus, select:focus{outline:none;box-shadow:var(--ring);border-color:#bfdbfe}
+    .btn{appearance:none;border:1px solid #d1d5db;background:#fff;border-radius:10px;padding:8px 12px;font-weight:600;cursor:pointer;transition:.2s}
+    .btn:hover{border-color:#94a3b8}
+    .btn.primary{background:var(--brand);color:#fff;border-color:var(--brand)}
+    .btn.ghost{background:transparent}
+    .pill{display:inline-flex;align-items:center;gap:8px;background:#f1f5f9;border:1px solid #e2e8f0;padding:6px 10px;border-radius:999px;font-size:12px}
+    .kpi{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:10px}
+    .kpi .cap{font-size:12px;color:var(--muted)}
+    .kpi .val{font-size:20px;font-weight:700}
+    .kpi.positive{background:#f0fdf4;border-color:#bbf7d0}
+    .kpi.negative{background:#fff1f2;border-color:#fecdd3}
+    .tabs{display:flex;gap:8px;flex-wrap:wrap}
+    .tab{padding:8px 12px;border-radius:10px;border:1px solid #d1d5db;background:#fff;cursor:pointer;font-weight:600}
+    .tab.active{background:#111827;color:#fff;border-color:#111827}
+    .help{font-size:12px;color:var(--muted)}
+    .grid-mini{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>ASMI Pricing Micro‑Simulation</h1>
+        <div class="sub">Find a sustainable yet inclusive premium for BoP health insurance (per 1,000 households).</div>
+      </div>
+      <div class="row" style="grid-auto-flow:column;gap:8px;align-items:center">
+        <button class="btn" id="resetBtn">Reset</button>
+        <button class="btn" id="saveBtn">Save scenario</button>
+        <button class="btn" id="exportBtn">Export CSV</button>
+        <button class="btn primary" id="showBtn">Show working</button>
+      </div>
+    </header>
+
+    <div class="card">
+      <div class="title">Quick presets</div>
+      <div class="row" style="grid-auto-flow:column;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn" data-preset="free">Free (₹0)</button>
+        <button class="btn" data-preset="p500">₹500</button>
+        <button class="btn" data-preset="p700Awa">₹700 + Awareness</button>
+        <button class="btn" data-preset="p1000">₹1000</button>
+        <button class="btn" data-preset="tiered">Tiered (₹500 / ₹1000)</button>
+        <span class="pill">Tip: Surplus = Premium revenue + Subsidy − (Claims + Admin + Awareness)</span>
+      </div>
+    </div>
+
+    <div class="row cols-2" style="margin-top:16px">
+      <div class="card controls">
+        <div class="title">Pricing Mode</div>
+        <div class="tabs" id="modeTabs">
+          <div class="tab active" data-mode="unified">Unified price</div>
+          <div class="tab" data-mode="tiered">Tiered by segment</div>
+        </div>
+        <div id="unifiedPanel" style="margin-top:12px">
+          <div class="row cols-3">
+            <div>
+              <label>Premium (₹)</label>
+              <div class="control"><input type="range" id="premium" min="0" max="1200" step="10"><input type="number" id="premiumNum"></div>
+            </div>
+            <div>
+              <label>Awareness spend (₹/enrolled)</label>
+              <div class="control"><input type="range" id="awareSpend" min="0" max="150" step="5"><input type="number" id="awareSpendNum"></div>
+            </div>
+            <div>
+              <label>Awareness level</label>
+              <select id="awareLevel">
+                <option value="low">Low (no uplift)</option>
+                <option value="medium">Medium (+6pp TU, +8pp util)</option>
+                <option value="high">High (+10pp TU, +14pp util)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div id="tieredPanel" style="display:none;margin-top:12px">
+          <div class="row cols-4">
+            <div>
+              <label>SHG share (%)</label>
+              <div class="control"><input type="range" id="shgShare" min="0" max="100" step="5"><input type="number" id="shgShareNum"></div>
+            </div>
+            <div>
+              <label>Premium – SHG (₹)</label>
+              <div class="control"><input type="range" id="premSHG" min="0" max="1200" step="10"><input type="number" id="premSHGNum"></div>
+            </div>
+            <div>
+              <label>Premium – Urban (₹)</label>
+              <div class="control"><input type="range" id="premUrban" min="0" max="1200" step="10"><input type="number" id="premUrbanNum"></div>
+            </div>
+            <div>
+              <label>Awareness level</label>
+              <select id="awareLevelTier">
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+          </div>
+          <div class="row cols-4" style="margin-top:8px">
+            <div>
+              <label>Utilisation – SHG (%)</label>
+              <div class="control"><input type="range" id="utilSHG" min="10" max="50" step="1"><input type="number" id="utilSHGNum"></div>
+            </div>
+            <div>
+              <label>Utilisation – Urban (%)</label>
+              <div class="control"><input type="range" id="utilUrban" min="10" max="50" step="1"><input type="number" id="utilUrbanNum"></div>
+            </div>
+            <div>
+              <label>Awareness spend (₹/enrolled)</label>
+              <div class="control"><input type="range" id="awareSpendTier" min="0" max="150" step="5"><input type="number" id="awareSpendTierNum"></div>
+            </div>
+            <div>
+              <div class="help">WTP anchors (display only)</div>
+              <div class="grid-mini">
+                <div class="kpi"><div class="cap">SHG WTP</div><div class="val">₹500</div></div>
+                <div class="kpi"><div class="cap">Urban WTP</div><div class="val">₹900</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="title">Key Outputs (per 1,000 HHs)</div>
+        <div class="row cols-3" id="kpis"></div>
+        <div id="segmentDetails" style="margin-top:10px"></div>
+      </div>
+
+      <div class="card" id="workingCard" style="display:none">
+        <div class="title">Show working (per 1,000 households)</div>
+        <div class="help">Step-by-step arithmetic for the current scenario. Copy/paste into your memo.</div>
+        <pre id="workingTxt" style="white-space:pre-wrap; background:#0b1020; color:#e5e7eb; padding:12px; border-radius:12px; overflow:auto; margin-top:10px"></pre>
+      </div>
+    </div>
+
+    <div class="row cols-2" style="margin-top:16px">
+      <div class="card">
+        <div class="title">Price → Surplus (unified, current awareness/utilisation)</div>
+        <canvas id="chartPriceSurplus" height="220"></canvas>
+      </div>
+      <div class="card">
+        <div class="title">Coverage vs Sustainability frontier</div>
+        <canvas id="chartFrontier" height="220"></canvas>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="title">Saved scenarios</div>
+      <div id="savedList" class="help">No scenarios yet. Click “Save scenario”.</div>
+    </div>
+  </div>
+
+<script>
+// ---------- Constants & helpers ----------
+const BASE = {
+  targetHH: 1000,
+  adminBase: 300,
+  claimPerUser: 4800,
+  subsidyPerHH: 700,
+  takeupAt0: 0.75,
+  takeupAt500: 0.41,
+  takeupAt1000: 0.28,
+  utilBaseline: 0.22,
+};
+
+function rs(n){ return '₹' + (Math.round(n)).toLocaleString('en-IN'); }
+function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+
+function takeupFromPrice(price){
+  if (price <= 0) return BASE.takeupAt0;
+  if (price <= 500){
+    const t = price/500; return BASE.takeupAt0 + t*(BASE.takeupAt500-BASE.takeupAt0);
+  }
+  if (price <= 1000){
+    const t = (price-500)/500; return BASE.takeupAt500 + t*(BASE.takeupAt1000-BASE.takeupAt500);
+  }
+  const slope = (BASE.takeupAt1000-BASE.takeupAt500)/500;
+  return Math.max(0, BASE.takeupAt1000 + (price-1000)*slope);
+}
+
+function awarenessUplifts(level){
+  // returns { takeupUplift, utilUplift }
+  if(level==='low') return {takeupUplift:0, utilUplift:0};
+  if(level==='medium') return {takeupUplift:0.06, utilUplift:0.08};
+  return {takeupUplift:0.10, utilUplift:0.14};
+}
+
+function computeScenario({ price, util, awareness, awareLevel }){
+  const { takeupUplift } = awarenessUplifts(awareLevel);
+  const baseTU = takeupFromPrice(price);
+  const scaler = price<=0?0.4 : price<=500?1 : price<=1000?0.7:0.4;
+  const tu = clamp01(baseTU + takeupUplift*scaler);
+
+  const enrolled = Math.round(BASE.targetHH * tu);
+  const users = Math.round(enrolled * util);
+  const claims = users * BASE.claimPerUser;
+  const admin = enrolled * (BASE.adminBase + awareness);
+  const totalCost = claims + admin;
+  const premiumRevenue = enrolled * price;
+  const subsidy = enrolled * BASE.subsidyPerHH;
+  const totalRev = premiumRevenue + subsidy;
+  const surplus = totalRev - totalCost;
+
+  return { price, takeup:tu, enrolled, users, claims, admin, totalCost, premiumRevenue, subsidy, totalRev, surplus, util };
+}
+
+// ---------- State ----------
+const state = {
+  mode:'unified',
+  premium:700,
+  awareSpend:50,
+  awareLevel:'medium',
+  // tiered
+  shgShare:60,
+  premSHG:500,
+  premUrban:1000,
+  utilSHG:28,
+  utilUrban:20,
+  awareSpendTier:50,
+  awareLevelTier:'medium',
+  saved:[],
+};
+
+// ---------- DOM refs ----------
+const el = (id)=>document.getElementById(id);
+const modeTabs = document.querySelectorAll('#modeTabs .tab');
+
+// Unified refs
+const premium = el('premium'), premiumNum = el('premiumNum');
+const awareSpend = el('awareSpend'), awareSpendNum = el('awareSpendNum');
+const awareLevel = el('awareLevel');
+
+// Tiered refs
+const shgShare = el('shgShare'), shgShareNum = el('shgShareNum');
+const premSHG = el('premSHG'), premSHGNum = el('premSHGNum');
+const premUrban = el('premUrban'), premUrbanNum = el('premUrbanNum');
+const utilSHG = el('utilSHG'), utilSHGNum = el('utilSHGNum');
+const utilUrban = el('utilUrban'), utilUrbanNum = el('utilUrbanNum');
+const awareSpendTier = el('awareSpendTier'), awareSpendTierNum = el('awareSpendTierNum');
+const awareLevelTier = el('awareLevelTier');
+
+const unifiedPanel = el('unifiedPanel');
+const tieredPanel = el('tieredPanel');
+const kpis = el('kpis');
+const segDetails = el('segmentDetails');
+const savedList = el('savedList');
+
+// Buttons
+const showBtn = el('showBtn');
+el('resetBtn').onclick = ()=>{ Object.assign(state, {
+  mode:'unified', premium:700, awareSpend:50, awareLevel:'medium', shgShare:60, premSHG:500, premUrban:1000, utilSHG:28, utilUrban:20, awareSpendTier:50, awareLevelTier:'medium'
+}); syncUI(); renderAll(); };
+
+el('saveBtn').onclick = ()=>{
+  const snap = buildSnapshot();
+  state.saved.push(snap);
+  renderSaved();
+};
+
+el('exportBtn').onclick = ()=>{
+  if(!state.saved.length){ alert('No scenarios saved yet.'); return; }
+  const headers = ['Time','Mode','PremiumUnified','AwarenessSpend','AwarenessLevel','SegSHG%','PremiumSHG','PremiumUrban','UtilSHG%','UtilUrban%','Enrolled','Users','Claims','Admin','TotalCost','PremiumRevenue','Subsidy','TotalRevenue','Surplus'];
+  const rows = state.saved.map(s=>[
+    s.time, s.mode, s.premium, s.awareSpend, s.awareLevel, s.shgShare, s.premSHG, s.premUrban, s.utilSHG, s.utilUrban,
+    s.metrics.enrolled, s.metrics.users, s.metrics.claims, s.metrics.admin, s.metrics.totalCost, s.metrics.premiumRevenue, s.metrics.subsidy, s.metrics.totalRev, s.metrics.surplus
+  ]);
+  const csv = [headers.join(','), ...rows.map(r=>r.join(','))].join('\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download='ASMI_pricing_scenarios.csv'; a.click(); URL.revokeObjectURL(url);
+};
+
+// Presets
+for(const b of document.querySelectorAll('[data-preset]')){
+  b.addEventListener('click', ()=>{
+    const p = b.getAttribute('data-preset');
+    if(p==='free'){ state.mode='unified'; state.premium=0; state.awareSpend=0; state.awareLevel='low'; }
+    if(p==='p500'){ state.mode='unified'; state.premium=500; state.awareSpend=0; state.awareLevel='low'; }
+    if(p==='p700Awa'){ state.mode='unified'; state.premium=700; state.awareSpend=50; state.awareLevel='medium'; }
+    if(p==='p1000'){ state.mode='unified'; state.premium=1000; state.awareSpend=0; state.awareLevel='low'; }
+    if(p==='tiered'){ state.mode='tiered'; state.premSHG=500; state.premUrban=1000; state.awareSpendTier=50; state.awareLevelTier='medium'; }
+    syncUI(); renderAll();
+  });
+}
+
+// Mode tabs
+modeTabs.forEach(t=>t.addEventListener('click', ()=>{
+  modeTabs.forEach(x=>x.classList.remove('active'));
+  t.classList.add('active');
+  state.mode = t.getAttribute('data-mode');
+  unifiedPanel.style.display = state.mode==='unified' ? '' : 'none';
+  tieredPanel.style.display = state.mode==='tiered' ? '' : 'none';
+  renderAll();
+}));
+
+// Sync UI controls with state
+function syncUI(){
+  // tabs
+  modeTabs.forEach(x=>x.classList.toggle('active', x.getAttribute('data-mode')===state.mode));
+  unifiedPanel.style.display = state.mode==='unified' ? '' : 'none';
+  tieredPanel.style.display = state.mode==='tiered' ? '' : 'none';
+
+  premium.value = premiumNum.value = state.premium;
+  awareSpend.value = awareSpendNum.value = state.awareSpend;
+  awareLevel.value = state.awareLevel;
+
+  shgShare.value = shgShareNum.value = state.shgShare;
+  premSHG.value = premSHGNum.value = state.premSHG;
+  premUrban.value = premUrbanNum.value = state.premUrban;
+  utilSHG.value = utilSHGNum.value = state.utilSHG;
+  utilUrban.value = utilUrbanNum.value = state.utilUrban;
+  awareSpendTier.value = awareSpendTierNum.value = state.awareSpendTier;
+  awareLevelTier.value = state.awareLevelTier;
+}
+
+// Events for unified
+function bindPair(rangeEl, numEl, key){
+  rangeEl.addEventListener('input', ()=>{ state[key] = +rangeEl.value; numEl.value = rangeEl.value; renderAll(); });
+  numEl.addEventListener('input', ()=>{ state[key] = +numEl.value || 0; rangeEl.value = numEl.value; renderAll(); });
+}
+bindPair(premium, premiumNum, 'premium');
+bindPair(awareSpend, awareSpendNum, 'awareSpend');
+awareLevel.addEventListener('change', ()=>{ state.awareLevel = awareLevel.value; renderAll(); });
+
+// Events for tiered
+bindPair(shgShare, shgShareNum, 'shgShare');
+bindPair(premSHG, premSHGNum, 'premSHG');
+bindPair(premUrban, premUrbanNum, 'premUrban');
+bindPair(utilSHG, utilSHGNum, 'utilSHG');
+bindPair(utilUrban, utilUrbanNum, 'utilUrban');
+bindPair(awareSpendTier, awareSpendTierNum, 'awareSpendTier');
+awareLevelTier.addEventListener('change', ()=>{ state.awareLevelTier = awareLevelTier.value; renderAll(); });
+
+// ---------- Charts ----------
+let chart1, chart2;
+function rebuildCharts(priceCurve){
+  const ctx1 = document.getElementById('chartPriceSurplus');
+  const ctx2 = document.getElementById('chartFrontier');
+
+  if(chart1){ chart1.destroy(); }
+  chart1 = new Chart(ctx1, {
+    type:'line',
+    data:{ labels: priceCurve.map(d=>d.price), datasets:[ {label:'Surplus (₹)', data: priceCurve.map(d=>d.surplus), tension:.25 } ] },
+    options:{ scales:{ x:{ title:{display:true,text:'Premium (₹)'} }, y:{ title:{display:true,text:'Surplus (₹)'} } }, plugins:{ legend:{display:false} } }
+  });
+
+  if(chart2){ chart2.destroy(); }
+  chart2 = new Chart(ctx2, {
+    type:'scatter',
+    data:{ datasets:[ { label:'Scenarios', data: priceCurve.map(d=>({x:d.takeup, y:d.surplus})), } ] },
+    options:{ scales:{ x:{ title:{display:true,text:'Coverage (take‑up %)'}, min:0, max:100 }, y:{ title:{display:true,text:'Surplus (₹)'} } } }
+  });
+}
+
+// ---------- Render ----------
+function renderKPIs(metrics){
+  const items = [
+    { cap:'Enrolled', val: metrics.enrolled.toLocaleString() },
+    { cap:'Users (claims)', val: metrics.users.toLocaleString() },
+    { cap:'Premium revenue', val: rs(metrics.premiumRevenue) },
+    { cap:'Govt subsidy', val: rs(metrics.subsidy) },
+    { cap:'Total cost', val: rs(metrics.totalCost) },
+    { cap:'Surplus', val: rs(metrics.surplus), tone: metrics.surplus>=0?'positive':'negative' },
+  ];
+  kpis.innerHTML = items.map(i=>`<div class="kpi ${i.tone||''}"><div class="cap">${i.cap}</div><div class="val">${i.val}</div></div>`).join('');
+}
+
+function buildWorkingText({ mode, metrics }){
+  const lines = [];
+  if(mode==='unified'){
+    const price = state.premium;
+    const { takeupUplift, utilUplift } = awarenessUplifts(state.awareLevel);
+    const baseTU = takeupFromPrice(price);
+    const scaler = price<=0?0.4 : price<=500?1 : price<=1000?0.7:0.4;
+    const tu = clamp01(baseTU + takeupUplift*scaler);
+    const util = clamp01(BASE.utilBaseline + utilUplift);
+    const enrolled = Math.round(BASE.targetHH * tu);
+    const users = Math.round(enrolled * util);
+    const claims = users * BASE.claimPerUser;
+    const admin = enrolled * (BASE.adminBase + state.awareSpend);
+    const revenue = enrolled * (price + BASE.subsidyPerHH);
+    const surplus = revenue - (claims + admin);
+
+    lines.push(`Mode: Unified | Price = ₹${price}`);
+    lines.push(`Take-up interpolation: base ${Math.round(baseTU*100)}% + uplift ${Math.round(takeupUplift*scaler*100)}pp → ~${Math.round(tu*100)}%`);
+    lines.push(`Utilisation: baseline 22% + uplift ${Math.round(utilUplift*100)}pp → ~${Math.round(util*100)}%`);
+    lines.push(`Enrolled = 1,000 × ${Math.round(tu*100)}% = ${enrolled}`);
+    lines.push(`Users = ${enrolled} × ${Math.round(util*100)}% = ${users}`);
+    lines.push(`Claims = ${users} × ₹4,800 = ${rs(claims)}`);
+    lines.push(`Admin = ${enrolled} × (₹300 + ₹${state.awareSpend}) = ${rs(admin)}`);
+    lines.push(`Revenue = ${enrolled} × (₹${price} + ₹700) = ${rs(revenue)}`);
+    lines.push(`Surplus = Revenue − (Claims + Admin) = ${rs(surplus)}`);
+  } else {
+    const shareA = state.shgShare/100, shareB = 1-shareA;
+    const utilA = clamp01(state.utilSHG/100), utilB = clamp01(state.utilUrban/100);
+    const aware = state.awareSpendTier;
+    const awLv = state.awareLevelTier;
+
+    const mA = computeScenario({ price: state.premSHG, util: utilA, awareness: aware, awareLevel: awLv });
+    const mB = computeScenario({ price: state.premUrban, util: utilB, awareness: aware, awareLevel: awLv });
+
+    lines.push(`Mode: Tiered | SHG price ₹${state.premSHG} | Urban price ₹${state.premUrban} | SHG share ${Math.round(shareA*100)}%`);
+
+    lines.push(`SHG: take-up ~${Math.round(mA.takeup*100)}%, util ${Math.round(utilA*100)}% → enrolled ${Math.round(mA.enrolled*shareA)}, users ${Math.round(mA.users*shareA)}`);
+    lines.push(`Urban: take-up ~${Math.round(mB.takeup*100)}%, util ${Math.round(utilB*100)}% → enrolled ${Math.round(mB.enrolled*shareB)}, users ${Math.round(mB.users*shareB)}`);
+
+    const enrolled = Math.round(mA.enrolled*shareA + mB.enrolled*shareB);
+    const users = Math.round(mA.users*shareA + mB.users*shareB);
+    const claims = users * BASE.claimPerUser;
+    const admin = enrolled * (BASE.adminBase + aware);
+    const premRev = Math.round(mA.premiumRevenue*shareA + mB.premiumRevenue*shareB);
+    const subsidy = enrolled * BASE.subsidyPerHH;
+    const revenue = premRev + subsidy;
+    const surplus = revenue - (claims + admin);
+
+    lines.push(`Totals: Enrolled ${enrolled}, Users ${users}`);
+    lines.push(`Claims = ${users} × ₹4,800 = ${rs(claims)}`);
+    lines.push(`Admin = ${enrolled} × (₹300 + ₹${aware}) = ${rs(admin)}`);
+    lines.push(`Premium revenue = weighted(SHG, Urban) = ${rs(premRev)}`);
+    lines.push(`Subsidy = ${enrolled} × ₹700 = ${rs(subsidy)}`);
+    lines.push(`Surplus = (Premium + Subsidy) − (Claims + Admin) = ${rs(surplus)}`);
+  }
+  return lines.join('\n');
+}
+
+function renderSaved(){
+  if(!state.saved.length){ savedList.innerHTML = '<div class="help">No scenarios yet. Click “Save scenario”.</div>'; return; }
+  savedList.innerHTML = state.saved.map(s=>{
+    return `<div class="row cols-4" style="border-top:1px dashed #e5e7eb;padding-top:8px;margin-top:8px">
+      <div><div class="cap">Time</div><div>${s.time}</div></div>
+      <div><div class="cap">Mode</div><div>${s.mode}</div></div>
+      <div><div class="cap">Premium</div><div>${s.mode==='unified'? '₹'+s.premium : `SHG ₹${s.premSHG} / Urban ₹${s.premUrban}`}</div></div>
+      <div><div class="cap">Surplus</div><div>${rs(s.metrics.surplus)}</div></div>
+    </div>`;
+  }).join('');
+}
+
+function buildSnapshot(){
+  const time = new Date().toLocaleString('en-IN');
+  const mode = state.mode;
+  let metrics;
+  if(mode==='unified'){
+    const util = clamp01(BASE.utilBaseline + awarenessUplifts(state.awareLevel).utilUplift);
+    metrics = computeScenario({ price: state.premium, util, awareness: state.awareSpend, awareLevel: state.awareLevel });
+  } else {
+    const shareA = state.shgShare/100, shareB = 1-shareA;
+    const utilA = state.utilSHG/100, utilB = state.utilUrban/100;
+    const mA = computeScenario({ price: state.premSHG, util: utilA, awareness: state.awareSpendTier, awareLevel: state.awareLevelTier });
+    const mB = computeScenario({ price: state.premUrban, util: utilB, awareness: state.awareSpendTier, awareLevel: state.awareLevelTier });
+    // Weighted
+    const enrolled = Math.round(mA.enrolled*shareA + mB.enrolled*shareB);
+    const users = Math.round(mA.users*shareA + mB.users*shareB);
+    const claims = users * BASE.claimPerUser;
+    const admin = enrolled * (BASE.adminBase + state.awareSpendTier);
+    const totalCost = claims + admin;
+    const premiumRevenue = Math.round(mA.premiumRevenue*shareA + mB.premiumRevenue*shareB);
+    const subsidy = enrolled * BASE.subsidyPerHH;
+    const totalRev = premiumRevenue + subsidy;
+    const surplus = totalRev - totalCost;
+    metrics = { enrolled, users, claims, admin, totalCost, premiumRevenue, subsidy, totalRev, surplus };
+  }
+  return { time, mode,
+    premium: state.premium, awareSpend: state.awareSpend, awareLevel: state.awareLevel,
+    shgShare: state.shgShare, premSHG: state.premSHG, premUrban: state.premUrban,
+    utilSHG: state.utilSHG, utilUrban: state.utilUrban,
+    metrics };
+}
+
+function renderAll(){
+  const workingVisible = document.getElementById('workingCard').style.display !== 'none';
+  let snapshotForWorking;
+
+  if(state.mode==='unified'){
+    segDetails.innerHTML = '';
+    const util = clamp01(BASE.utilBaseline + awarenessUplifts(state.awareLevel).utilUplift);
+    const m = computeScenario({ price: state.premium, util, awareness: state.awareSpend, awareLevel: state.awareLevel });
+    renderKPIs(m);
+
+    // Price curve
+    const curve = [];
+    for(let p=0;p<=1200;p+=50){
+      const mm = computeScenario({ price:p, util, awareness: state.awareSpend, awareLevel: state.awareLevel });
+      curve.push({ price:p, surplus:mm.surplus, takeup: Math.round(mm.takeup*100) });
+    }
+    rebuildCharts(curve);
+    snapshotForWorking = { mode:'unified', metrics:m };
+  } else {
+    const shareA = state.shgShare/100, shareB = 1-shareA;
+    const utilA = clamp01(state.utilSHG/100), utilB = clamp01(state.utilUrban/100);
+    const mA = computeScenario({ price: state.premSHG, util: utilA, awareness: state.awareSpendTier, awareLevel: state.awareLevelTier });
+    const mB = computeScenario({ price: state.premUrban, util: utilB, awareness: state.awareSpendTier, awareLevel: state.awareLevelTier });
+    const enrolled = Math.round(mA.enrolled*shareA + mB.enrolled*shareB);
+    const users = Math.round(mA.users*shareA + mB.users*shareB);
+    const claims = users * BASE.claimPerUser;
+    const admin = enrolled * (BASE.adminBase + state.awareSpendTier);
+    const totalCost = claims + admin;
+    const premiumRevenue = Math.round(mA.premiumRevenue*shareA + mB.premiumRevenue*shareB);
+    const subsidy = enrolled * BASE.subsidyPerHH;
+    const totalRev = premiumRevenue + subsidy;
+    const surplus = totalRev - totalCost;
+
+    renderKPIs({ enrolled, users, premiumRevenue, subsidy, totalCost, surplus });
+
+    segDetails.innerHTML = `
+      <div class="title" style="margin-top:8px">Segment details</div>
+      <div class="row cols-2">
+        <div class="kpi"><div class="cap">SHG price</div><div class="val">${rs(state.premSHG)}</div></div>
+        <div class="kpi"><div class="cap">Urban price</div><div class="val">${rs(state.premUrban)}</div></div>
+        <div class="kpi"><div class="cap">SHG Enrolled</div><div class="val">${Math.round(mA.enrolled*shareA).toLocaleString()}</div></div>
+        <div class="kpi"><div class="cap">Urban Enrolled</div><div class="val">${Math.round(mB.enrolled*shareB).toLocaleString()}</div></div>
+      </div>`;
+
+    // For charts
+    const util = clamp01(BASE.utilBaseline + awarenessUplifts(state.awareLevelTier).utilUplift);
+    const curve = [];
+    for(let p=0;p<=1200;p+=50){
+      const mm = computeScenario({ price:p, util, awareness: state.awareSpendTier, awareLevel: state.awareLevelTier });
+      curve.push({ price:p, surplus:mm.surplus, takeup: Math.round(mm.takeup*100) });
+    }
+    rebuildCharts(curve);
+    snapshotForWorking = { mode:'tiered', metrics:{ enrolled, users, claims, admin, premiumRevenue, subsidy, totalRev, surplus } };
+  }
+
+  // Update working if visible
+  if(workingVisible){
+    document.getElementById('workingTxt').textContent = buildWorkingText(snapshotForWorking);
+  }
+}
+
+// Initial
+syncUI();
+renderAll();
+renderSaved();
+
+// Show working toggle
+showBtn.onclick = () => {
+  const card = document.getElementById('workingCard');
+  const isHidden = card.style.display === 'none';
+  card.style.display = isHidden ? '' : 'none';
+  if(isHidden){
+    // force compute current snapshot and print
+    const snap = buildSnapshot();
+    document.getElementById('workingTxt').textContent = buildWorkingText(snap);
+    showBtn.textContent = 'Hide working';
+  } else {
+    showBtn.textContent = 'Show working';
+  }
+};
+
+// ---------- Self-tests (non-blocking) ----------
+try{
+  console.assert(Math.abs(takeupFromPrice(0) - 0.75) < 1e-9, 'takeup@0 should be 0.75');
+  console.assert(Math.abs(takeupFromPrice(500) - 0.41) < 1e-9, 'takeup@500 should be 0.41');
+  console.assert(Math.abs(takeupFromPrice(1000) - 0.28) < 1e-9, 'takeup@1000 should be 0.28');
+  const test = computeScenario({ price:700, util:0.22, awareness:0, awareLevel:'low' });
+  console.assert(test.enrolled >= 0 && test.subsidy >= 0 && Number.isFinite(test.surplus), 'scenario should compute numbers');
+}catch(e){ console.warn('Self-tests failed:', e); }
+</script>
+</body>
+</html>
